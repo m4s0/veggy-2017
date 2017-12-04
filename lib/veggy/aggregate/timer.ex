@@ -16,6 +16,12 @@ defmodule Veggy.Aggregate.Timer do
             "pomodoro_id" => Map.get(p, "pomodoro_id"),
             "_id" => Veggy.UUID.new}}
   end
+  def route(%{"command" => "SquashPomodoro"}) do
+    {:ok, %{"command" => "SquashPomodoro",
+            "aggregate_id" => "timer",
+            "aggregate_module" => __MODULE__,
+            "_id" => Veggy.UUID.new}}
+  end
 
   def init(id) do
     {:ok, %{"id" => id, "ticking" => false}}
@@ -59,6 +65,17 @@ defmodule Veggy.Aggregate.Timer do
             "_id" => Veggy.UUID.new}}
   end
 
-  def process(%{"event" => "PomodoroStarted"}, s), do: %{s | "ticking" => true}
-  def process(%{"event" => "PomodoroCompleted"}, s), do: %{s | "ticking" => false}
+  def handle(%{"command" => "SquashPomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
+  def handle(c = %{"command" => "SquashPomodoro"}, s) do
+    :ok = Veggy.Countdown.squash(s["pomodoro_id"])
+    {:ok, %{"event" => "PomodoroSquashed",
+            "command_id" => c["_id"],
+            "aggregate_id" => s["id"],
+            "pomodoro_id" => s["pomodoro_id"],
+            "_id" => Veggy.UUID.new}}
+  end
+
+  def process(%{"event" => "PomodoroStarted"} = e, s), do: %{s | "ticking" => true} |> Map.put("pomodoro_id", e["pomodoro_id"])
+  def process(%{"event" => "PomodoroCompleted"}, s), do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
+  def process(%{"event" => "PomodoroSquashed"}, s), do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
 end
