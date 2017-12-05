@@ -4,8 +4,29 @@ defmodule Veggy.Projection.Pomodori do
     events: ["PomodoroStarted", "PomodoroSquashed", "PomodoroCompleted"],
     identity: "pomodoro_id"
 
-  def process(_event, record) do
+#  def process(_event, record) do
+#    record
+#  end
+
+  def process(%{"event" => "PomodoroStarted"} = event, record) do
     record
+    |> Map.put("status", "started")
+    |> Map.put("pomodoro_id", event["pomodoro_id"])
+    |> Map.put("started_at", event["_received_at"])
+    |> Map.put("timer_id", event["timer_id"])
+    |> Map.put("duration", event["duration"])
+  end
+
+  def process(%{"event" => "PomodoroCompleted"} = event, record) do
+    record
+    |> Map.put("status", "completed")
+    |> Map.put("completed_at", event["_received_at"])
+  end
+
+  def process(%{"event" => "PomodoroSquashed"} = event, record) do
+    record
+    |> Map.put("status", "squashed")
+    |> Map.put("squashed_at", event["_received_at"])
   end
 
   def query("pomodori-of-the-day", %{"day" => day, "timer_id" => timer_id} = parameters) do
