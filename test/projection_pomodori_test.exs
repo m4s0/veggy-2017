@@ -23,6 +23,7 @@ defmodule Veggy.ProjectionPomodoriTest do
     assert %{"started_at" => :received_at} = process event, record
     assert %{"timer_id" => :timer_id} = process event, record
     assert %{"duration" => :duration} = process event, record
+    assert %{"description" => :description} = process event, record
   end
 
   test "process PomodoroCompleted" do

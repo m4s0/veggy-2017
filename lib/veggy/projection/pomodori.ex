@@ -11,6 +11,7 @@ defmodule Veggy.Projection.Pomodori do
     |> Map.put("started_at", event["_received_at"])
     |> Map.put("status", "started")
     |> Map.put("duration", event["duration"])
+    |> Map.put("description", event["description"])
   end
   def process(%{"event" => "PomodoroCompleted"} = event, record) do
     record
