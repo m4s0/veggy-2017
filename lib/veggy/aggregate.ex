@@ -67,6 +67,7 @@ defmodule Veggy.Aggregate do
       defp merge_with(m, o),
         do: Enum.reduce(o, m, fn({k, v}, m) -> Map.put(m, to_string(k), v) end)
 
+      # definisce l'override delle funzioni definendo il "nome": "n. di parametri che accetta"
       defoverridable [route: 1, fetch: 2, store: 1, check: 1, handle: 2, process: 2]
     end
   end
