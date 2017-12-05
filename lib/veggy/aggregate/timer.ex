@@ -12,7 +12,18 @@ defmodule Veggy.Aggregate.Timer do
   def route(%{"command" => "StartPomodoro"} = p) do
     {:ok, command("StartPomodoro", aggregate_id(p),
         duration: Map.get(p, "duration", @default_duration),
+        shared_with: Map.get(p, "shared_with", [] ) |> Enum.map(&Veggy.MongoDB.ObjectId.from_string/1),
         description: Map.get(p, "description", ""))}
+  end
+  def route(%{"command" => "StartSharedPomodoro"} = p) do
+    {:ok, command("StartSharedPomodoro", aggregate_id(p),
+        duration: Map.get(p, "duration", @default_duration),
+
+      # /1 indica l'arietà della funzione, ossia il numero di parametri che accetta.
+      # n.b ci posso essere più funzioni con lo stesso nome ma con diverso numero di parametri
+      shared_with: Map.get(p, "shared_with", [] ) |> Enum.map(&Veggy.MongoDB.ObjectId.from_string/1),
+
+      description: Map.get(p, "description", ""))}
   end
   def route(%{"command" => "CompletePomodoro"} = p) do
     {:ok, command("CompletePomodoro", aggregate_id(p),
@@ -20,6 +31,10 @@ defmodule Veggy.Aggregate.Timer do
   end
   def route(%{"command" => "SquashPomodoro"} = p) do
     {:ok, command("SquashPomodoro", aggregate_id(p),
+        reason: Map.get(p, "reason", ""))}
+  end
+  def route(%{"command" => "SquashSharedPomodoro"} = p) do
+    {:ok, command("SquashSharedPomodoro", aggregate_id(p),
         reason: Map.get(p, "reason", ""))}
   end
 
@@ -36,7 +51,25 @@ defmodule Veggy.Aggregate.Timer do
     {:ok, event("PomodoroStarted",
         pomodoro_id: pomodoro_id,
         duration: c["duration"],
+        shared_with: c["shared_with"],
         description: c["description"])}
+  end
+  def handle(%{"command" => "StartSharedPomodoro", "shared_with" => shared_with} = c, s) do
+    pair = [s["id"] | shared_with]
+
+    commands = Enum.map(
+      pair,
+      fn (id) ->
+        command(
+          "StartPomodoro",
+          id,
+          duration: c["duration"],
+          shared_with: pair -- [id],
+          description: c["description"]
+        )
+      end
+    )
+    {:ok, [], {:fork, commands}}
   end
   def handle(%{"command" => "CompletePomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
   def handle(%{"command" => "CompletePomodoro"}, _) do
@@ -48,16 +81,40 @@ defmodule Veggy.Aggregate.Timer do
     {:ok, event("PomodoroSquashed",
         reason: c["reason"])}
   end
+  def handle(%{"command" => "SquashSharedPomodoro"} = c, %{"shared_with" => shared_with} = s) do
+    pair = [s["id"] | shared_with]
+
+    commands = Enum.map(
+      pair,
+      fn (id) ->
+        command(
+          "SquashPomodoro",
+          id,
+          reason: c["reason"]
+        )
+      end
+    )
+    {:ok, [], {:fork, commands}}
+  end
 
   def process(%{"event" => "TimerCreated", "user_id" => user_id}, s),
     do: Map.put(s, "user_id", user_id)
 
-  def process(%{"event" => "PomodoroStarted", "pomodoro_id" => pomodoro_id}, s),
-    do: %{s | "ticking" => true} |> Map.put("pomodoro_id", pomodoro_id)
+  def process(%{"event" => "PomodoroStarted", "pomodoro_id" => pomodoro_id} = e, s),
+    do: %{s | "ticking" => true} |> Map.put("pomodoro_id", pomodoro_id) |> Map.put("shared_with", e["shared_with"])
 
   def process(%{"event" => "PomodoroSquashed"}, s),
     do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
 
   def process(%{"event" => "PomodoroCompleted"}, s),
     do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
+
+  def process(%{"event" => "PomodoroVoided"}, s),
+    do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
+
+  def rollback(%{"command" => "StartPomodoro"}, %{"ticking" => false}), do: {:error, "No pomodoro to rollback"}
+  def rollback(%{"command" => "StartPomodoro"}, %{"pomodoro_id" => pomodoro_id}) do
+    :ok = Veggy.Countdown.void(pomodoro_id)
+    {:ok, event("PomodoroVoided", [])}
+  end
 end
